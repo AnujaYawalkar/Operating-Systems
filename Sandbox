@@ -1,0 +1,110 @@
+/*
+
+Single Author info:
+asarang Abhishek Sarangan
+Group info:
+asarang Abhishek Sarangan
+ayawalk Anuja Chandrashekhar Yawalkar
+smirans Sahibi Miranshah
+
+*/
+
+#include <stdio.h>
+#include <sys/mman.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sched.h>
+#include <signal.h>
+#include <errno.h>
+
+
+//si_address main segfault kaha hua uska addrress milega
+// 004016f8 readString address from readString in hello3 00401775 end addr size 126
+//
+
+//char ch[18]= "0x0000000000401878";
+struct sigaction actions;	
+unsigned long *returnVal;
+unsigned long readStringAdd;// = (long)401878;
+// char ch[8]= "4016f8";
+long return_address;
+
+void handler(int a, siginfo_t* info, void * context)//sigset_t mask)
+{
+	//printf("Segfault from the address: %ld\n", (long)info->si_addr);
+
+	ucontext_t *ucontext;
+	mcontext_t mcontext;
+	readStringAdd = 4200568;	//long value of hex 401878
+	unsigned long who;
+	who = (unsigned long)info->si_addr;
+	//printf("who is %x\n",who);
+	if(who==readStringAdd)	//it is coming from readString
+	{
+		//printf("Segfault from readString\n");
+		ucontext = (ucontext_t *)context;
+		mcontext = ucontext->uc_mcontext;
+		returnVal = (unsigned long *)mcontext.gregs[15];
+		return_address = *returnVal;
+		//(long)(((mcontext_t)ucontext->uc_mcontext).gregs[15]);
+		//printf("Return Address is %x\n", *returnVal );
+
+		mprotect((void*)((unsigned int)(info->si_addr) & 0xfffffffffffff000), 1,
+            PROT_READ | PROT_WRITE | PROT_EXEC);
+
+		//0x00000000004028fc address of main
+
+		mprotect((void*)((unsigned int)(mcontext.gregs[15]) & 0xfffffffffffff000), 1,
+            PROT_READ | PROT_WRITE);
+	}
+	else	//it is coming from Main
+	{
+		//printf("Segfault from Main\n");
+		//printf("*returnVal= %x, who is %ld\n",return_address,who);
+		if((return_address)!=who)
+		{
+			printf("malicious buffer overflow detected, will exit!\n");
+			exit(0);
+		}
+				mprotect((void*)((unsigned int)(info->si_addr) & 0xfffffffffffff000), 1,
+            PROT_READ | PROT_WRITE | PROT_EXEC);
+
+		mprotect((void*)((unsigned int)(0x0000000000401878) & 0xfffffffffffff000), 1,
+            PROT_READ | PROT_WRITE);
+
+
+		//exit(0);
+
+	}
+	//write(1,"hi\n",3);
+	// exit(0);
+
+	
+
+	return;
+}
+
+void init_sandbox(void)
+{
+//Initialize a signal handler
+
+	mprotect((void*)((unsigned int)(0x0000000000401878) & 0xfffffffffffff000), 1,
+            PROT_READ | PROT_WRITE);	//readstring has been made non exec...
+
+
+
+	memset(&actions,'\0',sizeof(actions));
+	actions.sa_sigaction = &handler;
+	actions.sa_flags = SA_RESTART | SA_SIGINFO;
+	sigset_t mask;
+	sigemptyset(&mask);
+	sigaddset(&mask,SIGSEGV);
+	sigprocmask(SIG_UNBLOCK,&mask,NULL);
+	sigaction(SIGSEGV,&actions,NULL);
+
+
+
+}
+
