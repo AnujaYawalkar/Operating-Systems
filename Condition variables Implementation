@@ -1,0 +1,122 @@
+/*
+
+Single Author info:
+ayawalk Anuja Chnadrashekhar Yawalkar
+Group info:
+asarang Abhishek Sarangan
+ayawalk Anuja Chnadrashekhar Yawalkar
+smirans Sahibi Miranshah
+
+*/
+
+#include "mythread.h"
+//#include "myatomic.h"
+//#include "mymutex.h"
+#include "mycond.h"
+
+/**Remember! Enter kernel before block/unblock calls and no need to leave after as the calls leave it themselves**/
+int mythread_cond_init(mythread_cond_t *cond,
+    const mythread_condattr_t *attr)
+{
+	//printf("in cond init\n");
+	//mythread_enter_kernel();
+	cond = (mythread_cond_t *)(malloc(sizeof(mythread_cond_t)));
+	cond->attr = (mythread_condattr_t *)(malloc(sizeof(mythread_condattr_t)));
+	cond->mutex = (mythread_mutex_t *)(malloc(sizeof(mythread_mutex_t)));
+	//cond->blocked_queue = (mythread_queue_t *)(malloc(sizeof(mythread_queue_t)));
+	//mythread_leave_kernel();
+
+	mythread_condattr_t * new_attr = cond->attr;
+	new_attr->attribute = 0;
+
+	mythread_mutex_init(cond->mutex, NULL);
+	cond->num_blocked = 0;
+
+	return 0;
+}
+
+int mythread_cond_destroy(mythread_cond_t *cond)
+{
+	int retVal = 0;
+	mythread_enter_kernel();
+	if(cond->num_blocked == 0)
+	{
+		cond->blocked_queue = NULL;
+	}
+	else
+	{
+		retVal = 1;
+		//mythread_leave_kernel();
+		//return 1; //unsuccessful destroy bcz some threads were waiting/blocked for the cond var
+	}
+	mythread_leave_kernel();
+
+	return retVal;	//returns 1 on unsuccessful case and 0 on success
+}
+
+int mythread_cond_wait(mythread_cond_t *cond, mythread_mutex_t *mutex)
+{
+	int result, x;
+
+	mythread_enter_kernel();
+	mythread_t thread1 = mythread_self();
+	if(mutex->current_thread != thread1)
+	{
+		mythread_leave_kernel();
+		//return 0
+		return 1; 
+	} //thread does not have mutex, so exiting
+
+	else
+	{
+		mythread_block_phase1(&(cond->blocked_queue), 1);
+		//write(1, "blocked phase1\n", 15);
+		mythread_enter_kernel();
+		cond->num_blocked = cond->num_blocked+1;
+		mythread_leave_kernel();
+		x = mythread_mutex_unlock(mutex);
+
+		if(x != 0)
+			return 1; //unsuccessful in mutex unlock, hence exit
+
+		if(thread1->state == 0)	//Added functionality here
+			mythread_leave_kernel();
+		else
+		{
+			mythread_block_phase2(); //thread1 is suspended bcz cond is not signalled as yet
+			//write(1, "\nblocked phase2\n\n", 17);
+		}
+
+		x = mythread_mutex_lock(mutex);
+		if(x == 0) return x;
+		else return 1;
+	}
+}
+
+int mythread_cond_signal(mythread_cond_t *cond)
+{
+	mythread_enter_kernel();
+	if(cond->num_blocked <= 0)
+	{
+		mythread_leave_kernel();
+		return 0;
+	}
+	cond->num_blocked = cond->num_blocked - 1;
+	mythread_unblock(&(cond->blocked_queue), 1);	//unblock leaves kernel
+	//mythread_leave_kernel();
+
+	return 0;
+}
+
+int mythread_cond_broadcast(mythread_cond_t *cond)
+{
+	while(cond->num_blocked > 0)
+	{
+		mythread_enter_kernel();
+		cond->num_blocked = cond->num_blocked - 1;
+		mythread_unblock(&(cond->blocked_queue), 1);
+		//mythread_leave_kernel();
+	}
+
+	return 0;
+}
