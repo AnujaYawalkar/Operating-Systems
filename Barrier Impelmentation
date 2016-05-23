@@ -1,0 +1,95 @@
+/*
+
+Single Author info:
+asarang Abhishek Sarangan
+Group info:
+asarang Abhishek Sarangan
+ayawalk Anuja Chnadrashekhar Yawalkar
+smirans Sahibi Miranshah
+
+*/
+
+//
+#include "mybarrier.h"
+//#include "mythread.h"
+//#include "mycond.h"
+//#include "mymutex.h"
+/*int mythread_barrierattr_init(mythread_barrierattr_t *ba)
+{
+	ba - > arg = NULL;
+	return 0;
+}
+
+int mythread_barrierattr_destroy(mythread_barrierattr_t *ba)
+{
+	ba - > arg = NULL;
+	return 0;
+}*/
+
+int mythread_barrier_init(mythread_barrier_t *b, mythread_barrierattr_t *ba, int num)
+{
+	//CREATE MUTEX VARIABLE mutex;
+	//CREATE CONDITION VARIABLE cond_wait_var;
+	mythread_mutex_init(&b->m,NULL);
+	mythread_cond_init(&b->c,NULL);
+	//b -> c = cond_wait_var;
+	b -> num_of_threads = num;
+	b -> notdone = num;
+	b -> alive = 1;
+	b -> finished = 0;
+	if(ba==NULL)
+	{
+		mythread_barrierattr_t *attr;
+		attr = (mythread_barrierattr_t *)malloc(sizeof(struct mybarrier_attr));
+		//mythread_barrierattr_init(attr);
+		attr -> arg = NULL;
+		b -> ba = attr;
+	}
+	else b -> ba = ba;
+	return 0;
+}
+
+int mythread_barrier_destroy(mythread_barrier_t *b)
+{
+	if(b -> alive ==0)	return 0;	//already dead
+	
+	mythread_mutex_lock(&b->m);
+	
+	if(b->notdone!=b->num_of_threads)		//Still being used, can't delete
+	{
+		mythread_mutex_unlock(&b->m);
+		return -1;
+	}
+	b -> alive = 0;
+	mythread_mutex_unlock(&b->m);
+	mythread_mutex_destroy(&b->m);
+	mythread_cond_destroy(&b->c);	//CHECK SYNTAX!
+	return 0;
+}
+int mythread_barrier_wait(mythread_barrier_t *b)
+{
+	if(b -> alive ==0)	return -1;	//already dead
+	mythread_mutex_lock(&b->m);
+	int finished;
+	finished = b -> finished;
+	b->notdone = b->notdone-1;	//Another one called wait(), so one less to wait for now;
+	if(b->notdone==0)			//If all(num_of_threads) have called wait, no need to wait anymorem, all can be unblocked)
+	{
+		b->finished++;					//Signifies that all have finished wait and a new set can start;
+		b->notdone = b->num_of_threads;	//Reinitializing so that wait can be called for another set of threads.
+		mythread_cond_broadcast(&b->c);	//CHECK SYNTAX;	//Unblock evyone who called wait
+		mythread_mutex_unlock(&b->m);
+		return -1;	//Last thread who waits calls -1!		
+	}
+	
+	//If its not last, ie, notdone is not 0, ie there are threads who havent called wait
+	while(finished==b->finished)
+	{
+		int wait;
+		wait = mythread_cond_wait(&b->c,&b->m);
+		if(wait!=0) break;
+	}
+	mythread_mutex_unlock(&b->m);
+	return 0;	//Not last thread to call wait, so sends 0;		
+
+}
