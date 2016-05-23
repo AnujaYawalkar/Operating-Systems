@@ -1,0 +1,117 @@
+/*
+
+Single Author info:
+smirans Sahibi Miranshah
+Group info:
+asarang Abhishek Sarangan
+ayawalk Anuja Chnadrashekhar Yawalkar
+smirans Sahibi Miranshah
+
+*/
+
+#include "mymutex.h"
+
+int mythread_mutex_init(mythread_mutex_t *mutex, 
+    const mythread_mutexattr_t *attr)
+{
+	mythread_mutex_t *new_mutex = (mythread_mutex_t *)malloc(sizeof(mythread_mutex_t));
+	new_mutex = mutex;
+	new_mutex->blocked_queue = (mythread_queue_t *)malloc(sizeof(mythread_queue_t));
+	new_mutex->attr = NULL;	//because sir said not using
+	new_mutex->current_thread = NULL;
+
+	new_mutex->lock_status = 0;
+	new_mutex->num_waiting = 0;
+	new_mutex->num_blocked = 0;
+
+	return 0; //on success
+}
+
+int tts(int * lock)
+{
+	int max = 50;
+	int i = 0;
+	int val;
+
+	while(i<max)
+	{
+		while(*lock == 1);
+		//write(1, "trying for lock\n", 16);
+		val = compare_and_swap(lock, 1, 0);
+		if(val == 0)
+		{
+			//write(1, "acquired lock\n", 14);
+			return val;
+		}
+		else 
+		{
+			i++;
+			//write(1, "missed lock\n", 12);
+		}
+	}
+//char str[80];
+//sprintf(str, "Value of val = %d\n", val);
+//write(1, str, 20);
+	return val; //val is 0 if lock is acquired i.e. success // val is 1 otherwise
+}
+
+int mythread_mutex_lock(mythread_mutex_t *mutex)
+{
+	int result;
+
+	mythread_enter_kernel();
+	mutex->num_waiting = mutex->num_waiting+1;
+	mythread_leave_kernel();
+
+	if(mutex->lock_status == -1) return 1; //unsuccessful
+
+	result = tts(&(mutex->lock_status));
+	while(result == 1)
+	{
+		mythread_enter_kernel();
+		mutex->num_blocked = mutex->num_blocked+1;
+		mythread_block((mutex->blocked_queue),0);
+		mythread_leave_kernel();
+
+		result = tts(&(mutex->lock_status));
+	}
+	mythread_enter_kernel();
+	mutex->current_thread = mythread_self();
+	mythread_leave_kernel();
+
+	return result; //0 when locked i.e. successfully acquired lock
+}
+
+int mythread_mutex_unlock(mythread_mutex_t *mutex)
+{
+	if(mutex->lock_status == -1) return 1; //unsuccessful
+
+	while(compare_and_swap(&mutex->lock_status, 0, 1) == 0);
+	
+	mythread_enter_kernel();
+	mutex->num_waiting = mutex->num_waiting-1;
+	mutex->current_thread = NULL;
+	if(mutex->num_waiting == mutex->num_blocked)
+		if(mutex->num_waiting > 0)
+		{
+			mutex->num_blocked = mutex->num_blocked-1;
+			mythread_unblock(mutex->blocked_queue, 1);
+		}
+	mythread_leave_kernel();
+
+	return 0; //0 when unlocked successfully
+}
+
+int mythread_mutex_destroy(mythread_mutex_t *mutex)
+{
+	mythread_enter_kernel();	//so as not to be interrupted
+
+	mutex->lock_status = -1;
+	mutex->num_waiting = 0;
+	mutex->num_blocked = 0;
+	mutex->current_thread = NULL;
+	
+	mythread_leave_kernel();
+
+	return 0; //on success
+}
